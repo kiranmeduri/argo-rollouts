@@ -54,6 +54,7 @@ import (
 	"github.com/argoproj/argo-rollouts/utils/record"
 	replicasetutil "github.com/argoproj/argo-rollouts/utils/replicaset"
 	rolloututil "github.com/argoproj/argo-rollouts/utils/rollout"
+	unstructuredutil "github.com/argoproj/argo-rollouts/utils/unstructured"
 )
 
 var (
@@ -1678,6 +1679,88 @@ func TestGetReferencedIngressesNginx(t *testing.T) {
 		_, err = roCtx.getReferencedIngresses()
 		assert.NoError(t, err)
 	})
+}
+
+func TestGetReferencedAppMeshResources(t *testing.T) {
+	f := newFixture(t)
+	defer f.Close()
+	r := newCanaryRollout("rollout", 1, nil, nil, nil, intstr.FromInt(0), intstr.FromInt(1))
+	r.Spec.Strategy.Canary.TrafficRouting = &v1alpha1.RolloutTrafficRouting{
+		AppMesh: &v1alpha1.AppMeshTrafficRouting{
+			VirtualService: &v1alpha1.AppMeshVirtualService{
+				Name:   "mysvc",
+				Routes: []string{"primary"},
+			},
+			VirtualNodeGroup: &v1alpha1.AppMeshVirtualNodeGroup{
+				CanaryVirtualNodeRef: &v1alpha1.AppMeshVirtualNodeReference{
+					Name: "mysvc-canary-vn",
+				},
+				StableVirtualNodeRef: &v1alpha1.AppMeshVirtualNodeReference{
+					Name: "mysvc-stable-vn",
+				},
+			},
+		},
+	}
+	r.Namespace = "myns"
+	defer f.Close()
+
+	t.Run("get referenced App Mesh - fail", func(t *testing.T) {
+		c, _, _ := f.newController(noResyncPeriodFunc)
+		roCtx, err := c.newRolloutContext(r)
+		assert.NoError(t, err)
+		_, err = roCtx.getReferencedAppMeshResources()
+		expectedErr := field.Invalid(field.NewPath("spec", "strategy", "canary", "trafficRouting", "appmesh", "virtualService"), "mysvc", "virtualservices.appmesh.k8s.aws \"mysvc\" not found")
+		assert.Equal(t, expectedErr.Error(), err.Error())
+	})
+
+	t.Run("get referenced App Mesh - success", func(t *testing.T) {
+		vsvc := `apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualService
+metadata:
+  name: mysvc
+  namespace: myns
+spec:
+  provider:
+    virtualRouter:
+      virtualRouterRef:
+        name: mysvc-vrouter`
+
+		vrouter := `apiVersion: appmesh.k8s.aws/v1beta2
+kind: VirtualRouter
+metadata:
+  name: mysvc-vrouter
+  namespace: myns
+spec:
+  listeners:
+    - portMapping:
+        port: 8080
+        protocol: http
+  routes:
+    - name: primary
+      httpRoute:
+        match:
+          prefix: /
+        action:
+          weightedTargets:
+            - virtualNodeRef:
+                name: mysvc-canary-vn
+              weight: 0
+            - virtualNodeRef:
+                name: mysvc-stable-vn
+              weight: 100`
+
+		uVsvc := unstructuredutil.StrToUnstructuredUnsafe(vsvc)
+		uVrouter := unstructuredutil.StrToUnstructuredUnsafe(vrouter)
+		f.objects = append(f.objects, uVsvc, uVrouter)
+		c, _, _ := f.newController(noResyncPeriodFunc)
+		roCtx, err := c.newRolloutContext(r)
+		assert.NoError(t, err)
+		refRsources, err := roCtx.getReferencedAppMeshResources()
+		assert.NoError(t, err)
+		assert.Len(t, refRsources, 1)
+		assert.Equal(t, refRsources[0].GetKind(), "VirtualRouter")
+	})
+
 }
 
 func TestGetAmbassadorMappings(t *testing.T) {

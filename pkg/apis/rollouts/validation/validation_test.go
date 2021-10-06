@@ -495,4 +495,15 @@ func TestCanaryExperimentStepWithWeight(t *testing.T) {
 		allErrs := ValidateRolloutStrategyCanary(invalidRo, field.NewPath(""))
 		assert.Equal(t, 0, len(allErrs))
 	})
+
+	t.Run("unsupported - AppMesh TrafficRouting", func(t *testing.T) {
+		invalidRo := ro.DeepCopy()
+		invalidRo.Spec.Strategy.Canary.TrafficRouting = &v1alpha1.RolloutTrafficRouting{
+			AppMesh: &v1alpha1.AppMeshTrafficRouting{},
+		}
+		allErrs := ValidateRolloutStrategyCanary(invalidRo, field.NewPath(""))
+		assert.Equal(t, 1, len(allErrs))
+		assert.Equal(t, "Experiment template weight is only available for TrafficRouting with SMI and ALB at this time", allErrs[0].Detail)
+	})
+
 }
