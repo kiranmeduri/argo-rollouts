@@ -26,6 +26,7 @@ import (
 
 	rov1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	clientset "github.com/argoproj/argo-rollouts/pkg/client/clientset/versioned"
+	appmeshutil "github.com/argoproj/argo-rollouts/utils/appmesh"
 	istioutil "github.com/argoproj/argo-rollouts/utils/istio"
 	logutil "github.com/argoproj/argo-rollouts/utils/log"
 	smiutil "github.com/argoproj/argo-rollouts/utils/smi"
@@ -118,8 +119,9 @@ type E2ESuite struct {
 	suite.Suite
 	Common
 
-	IstioEnabled bool
-	SMIEnabled   bool
+	IstioEnabled   bool
+	SMIEnabled     bool
+	AppMeshEnabled bool
 }
 
 func (s *E2ESuite) SetupSuite() {
@@ -157,6 +159,10 @@ func (s *E2ESuite) SetupSuite() {
 
 	if smiutil.DoesSMIExist(s.smiClient, s.namespace) {
 		s.SMIEnabled = true
+	}
+
+	if appmeshutil.DoesAppMeshExist(s.dynamicClient, s.namespace) {
+		s.AppMeshEnabled = true
 	}
 }
 

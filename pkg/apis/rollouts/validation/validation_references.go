@@ -17,6 +17,7 @@ import (
 
 	"github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/ambassador"
+	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/appmesh"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/istio"
 )
 
@@ -61,6 +62,7 @@ type ReferencedResources struct {
 	ServiceWithType           []ServiceWithType
 	VirtualServices           []unstructured.Unstructured
 	AmbassadorMappings        []unstructured.Unstructured
+	AppMeshResources          []unstructured.Unstructured
 }
 
 func ValidateRolloutReferencedResources(rollout *v1alpha1.Rollout, referencedResources ReferencedResources) field.ErrorList {
@@ -79,6 +81,9 @@ func ValidateRolloutReferencedResources(rollout *v1alpha1.Rollout, referencedRes
 	}
 	for _, mapping := range referencedResources.AmbassadorMappings {
 		allErrs = append(allErrs, ValidateAmbassadorMapping(mapping)...)
+	}
+	for _, appmeshRes := range referencedResources.AppMeshResources {
+		allErrs = append(allErrs, ValidateAppMeshResource(appmeshRes)...)
 	}
 	return allErrs
 }
@@ -306,6 +311,51 @@ func ValidateAmbassadorMapping(obj unstructured.Unstructured) field.ErrorList {
 		allErrs = append(allErrs, field.Invalid(fldPath, obj.GetName(), msg))
 	}
 	return allErrs
+}
+
+func ValidateAppMeshResource(obj unstructured.Unstructured) field.ErrorList {
+	if obj.GetKind() != "VirtualRouter" {
+		fldPath := field.NewPath("kind")
+		msg := fmt.Sprintf("Expected object kind to be VirtualRouter but is %s", obj.GetKind())
+		return field.ErrorList{field.Invalid(fldPath, obj.GetKind(), msg)}
+	}
+
+	err := ValidateAppMeshVirtualRouter(&obj)
+	if err != nil {
+		return field.ErrorList{err}
+	}
+	return field.ErrorList{}
+}
+
+func ValidateAppMeshVirtualRouter(vrouter *unstructured.Unstructured) *field.Error {
+	routesFldPath := field.NewPath("spec", "routes")
+	allRoutesI, found, err := unstructured.NestedSlice(vrouter.Object, "spec", "routes")
+	if !found || err != nil || len(allRoutesI) == 0 {
+		return field.Invalid(routesFldPath, vrouter.GetName(), fmt.Sprintf("No routes found"))
+	}
+	for idx, routeI := range allRoutesI {
+		routeFldPath := routesFldPath.Index(idx)
+		route, ok := routeI.(map[string]interface{})
+		if !ok {
+			return field.Invalid(routeFldPath, vrouter.GetName(), "not well-formed")
+		}
+
+		routeRule, routeType, err := appmesh.GetRouteRule(route)
+		if err != nil || routeRule == nil {
+			return field.Invalid(routeFldPath, vrouter.GetName(), "not well-formed")
+		}
+
+		weightedTargetsFldPath := routeFldPath.Child(routeType).Child("action").Child("weightedTargets")
+		weightedTargets, found, err := unstructured.NestedSlice(routeRule, "action", "weightedTargets")
+		if !found || err != nil {
+			return field.Invalid(weightedTargetsFldPath, vrouter.GetName(), "not well-formed")
+		}
+
+		if len(weightedTargets) != 2 {
+			return field.Invalid(weightedTargetsFldPath, vrouter.GetName(), fmt.Sprintf("Found %d weightedTargets for route %s, expected 2", len(weightedTargets), route["name"]))
+		}
+	}
+	return nil
 }
 
 func GetServiceWithTypeFieldPath(serviceType ServiceType) *field.Path {

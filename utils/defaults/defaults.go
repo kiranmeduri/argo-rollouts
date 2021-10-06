@@ -44,6 +44,7 @@ const (
 	DefaultIstioVersion                 = "v1alpha3"
 	DefaultSMITrafficSplitVersion       = "v1alpha1"
 	DefaultTargetGroupBindingAPIVersion = "elbv2.k8s.aws/v1beta1"
+	DefaultAppMeshCRDVersion            = "v1beta2"
 )
 
 var (
@@ -52,6 +53,7 @@ var (
 	ambassadorAPIVersion         = DefaultAmbassadorVersion
 	smiAPIVersion                = DefaultSMITrafficSplitVersion
 	targetGroupBindingAPIVersion = DefaultTargetGroupBindingAPIVersion
+	appmeshCRDVersion            = DefaultAppMeshCRDVersion
 )
 
 const (
@@ -257,6 +259,14 @@ func SetAmbassadorAPIVersion(apiVersion string) {
 
 func GetAmbassadorAPIVersion() string {
 	return ambassadorAPIVersion
+}
+
+func SetAppMeshCRDVersion(apiVersion string) {
+	appmeshCRDVersion = apiVersion
+}
+
+func GetAppMeshCRDVersion() string {
+	return appmeshCRDVersion
 }
 
 func SetSMIAPIVersion(apiVersion string) {
