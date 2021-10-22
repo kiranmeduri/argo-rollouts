@@ -577,10 +577,6 @@ func (c *Common) GetAppMeshVirtualRouter() *unstructured.Unstructured {
 	ctx := context.TODO()
 	resClient := appmesh.NewResourceClient(c.dynamicClient)
 	name := ro.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualService.Name
-	namespace := ro.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualService.Namespace
-	if namespace == "" {
-		namespace = c.namespace
-	}
 	c.log.Infof("GetVirtualServiceCR with namespace(%s), name(%s)", c.namespace, name)
 	uVsvc, err := resClient.GetVirtualServiceCR(ctx, c.namespace, name)
 	c.CheckError(err)

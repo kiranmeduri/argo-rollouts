@@ -26,14 +26,12 @@ spec:
       canaryService: my-svc-canary
       stableService: my-svc-stable
       trafficRouting:
-        appmesh:
+        appMesh:
           # The referenced virtual-service will be used to determine the virtual-router that is
           # manipulated to update canary weights.
           virtualService:
             # name of the virtual-service App Mesh CR
             name: my-svc
-            # Optional namespace under which the virtual-service CR is defined. Defaults to namespace of Rollout.
-            namespace: default
             # Optional set of routes to update. If empty, all routes associated with the virtual-service are updated.
             routes:
             - http-primary

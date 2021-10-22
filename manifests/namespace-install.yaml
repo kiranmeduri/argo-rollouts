@@ -10400,7 +10400,7 @@ spec:
                             required:
                             - mappings
                             type: object
-                          appmesh:
+                          appMesh:
                             properties:
                               virtualNodeGroup:
                                 properties:
@@ -10408,16 +10408,12 @@ spec:
                                     properties:
                                       name:
                                         type: string
-                                      namespace:
-                                        type: string
                                     required:
                                     - name
                                     type: object
                                   stableVirtualNodeRef:
                                     properties:
                                       name:
-                                        type: string
-                                      namespace:
                                         type: string
                                     required:
                                     - name
@@ -10429,8 +10425,6 @@ spec:
                               virtualService:
                                 properties:
                                   name:
-                                    type: string
-                                  namespace:
                                     type: string
                                   routes:
                                     items:
@@ -13050,6 +13044,25 @@ rules:
   verbs:
   - list
   - get
+- apiGroups:
+  - appmesh.k8s.aws
+  resources:
+  - virtualservices
+  verbs:
+  - watch
+  - get
+  - list
+- apiGroups:
+  - appmesh.k8s.aws
+  resources:
+  - virtualnodes
+  - virtualrouters
+  verbs:
+  - watch
+  - get
+  - list
+  - update
+  - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

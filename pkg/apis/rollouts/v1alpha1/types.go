@@ -341,7 +341,7 @@ type RolloutTrafficRouting struct {
 	// Ambassador holds specific configuration to use Ambassador to route traffic
 	Ambassador *AmbassadorTrafficRouting `json:"ambassador,omitempty" protobuf:"bytes,5,opt,name=ambassador"`
 	// AppMesh holds specific configuration to use AppMesh to route traffic
-	AppMesh *AppMeshTrafficRouting `json:"appmesh,omitempty" protobuf:"bytes,6,opt,name=appmesh"`
+	AppMesh *AppMeshTrafficRouting `json:"appMesh,omitempty" protobuf:"bytes,6,opt,name=appMesh"`
 }
 
 // AmbassadorTrafficRouting defines the configuration required to use Ambassador as traffic
@@ -423,11 +423,8 @@ type AppMeshTrafficRouting struct {
 type AppMeshVirtualService struct {
 	// Name is the name of virtual service
 	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
-	// Namespace is the namespace in which virtual service is present
-	// +optional
-	Namespace string `json:"namespace,omitempty" protobuf:"bytes,2,opt,name=namespace"`
 	// Routes is list of HTTP routes within virtual router associated with virtual service to edit. If omitted, virtual service must have a single route of this type.
-	Routes []string `json:"routes,omitempty" protobuf:"bytes,3,rep,name=routes"`
+	Routes []string `json:"routes,omitempty" protobuf:"bytes,2,rep,name=routes"`
 }
 
 // AppMeshVirtualNodeGroup holds information about targets used for routing traffic to a virtual service
@@ -442,9 +439,6 @@ type AppMeshVirtualNodeGroup struct {
 type AppMeshVirtualNodeReference struct {
 	// Name is the name of VirtualNode CR
 	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
-	// Namespace is the namespace of VirtualNode CR. If unspecified, defaults to the referencing object’s namespace
-	// +optional
-	Namespace string `json:"namespace,omitempty" protobuf:"bytes,2,opt,name=namespace"`
 }
 
 // RolloutExperimentStep defines a template that is used to create a experiment for a step

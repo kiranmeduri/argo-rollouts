@@ -1,6 +1,7 @@
 package appmesh
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,8 +28,7 @@ func fakeRollout() *v1alpha1.Rollout {
 					TrafficRouting: &v1alpha1.RolloutTrafficRouting{
 						AppMesh: &v1alpha1.AppMeshTrafficRouting{
 							VirtualService: &v1alpha1.AppMeshVirtualService{
-								Name:   "mysvc",
-								Routes: []string{"primary"},
+								Name: "mysvc",
 							},
 							VirtualNodeGroup: &v1alpha1.AppMeshVirtualNodeGroup{
 								CanaryVirtualNodeRef: &v1alpha1.AppMeshVirtualNodeReference{
@@ -112,7 +112,7 @@ func TestSetWeightForVsvcWithVrouter(t *testing.T) {
 			name: "http",
 			args: args{
 				vsvc:      unstructuredutil.StrToUnstructuredUnsafe(vsvcWithVrouter),
-				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(baselineVrouterWithHTTPRoutes),
+				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(vrouterWithHTTPRoutes),
 				routeType: "httpRoute",
 				rollout:   fakeRollout(),
 			},
@@ -121,7 +121,7 @@ func TestSetWeightForVsvcWithVrouter(t *testing.T) {
 			name: "tcp",
 			args: args{
 				vsvc:      unstructuredutil.StrToUnstructuredUnsafe(vsvcWithVrouter),
-				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(baselineVrouterWithTCPRoutes),
+				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(vrouterWithTCPRoutes),
 				routeType: "tcpRoute",
 				rollout:   fakeRollout(),
 			},
@@ -130,7 +130,7 @@ func TestSetWeightForVsvcWithVrouter(t *testing.T) {
 			name: "http2",
 			args: args{
 				vsvc:      unstructuredutil.StrToUnstructuredUnsafe(vsvcWithVrouter),
-				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(baselineVrouterWithHTTP2Routes),
+				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(vrouterWithHTTP2Routes),
 				routeType: "http2Route",
 				rollout:   fakeRollout(),
 			},
@@ -139,7 +139,7 @@ func TestSetWeightForVsvcWithVrouter(t *testing.T) {
 			name: "grpc",
 			args: args{
 				vsvc:      unstructuredutil.StrToUnstructuredUnsafe(vsvcWithVrouter),
-				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(baselineVrouterWithGRPCRoutes),
+				vrouter:   unstructuredutil.StrToUnstructuredUnsafe(vrouterWithGRPCRoutes),
 				routeType: "grpcRoute",
 				rollout:   fakeRollout(),
 			},
@@ -148,21 +148,104 @@ func TestSetWeightForVsvcWithVrouter(t *testing.T) {
 
 	for _, wantUpdate := range []bool{true, false} {
 		for _, fixture := range fixtures {
+			t.Run(fmt.Sprintf("%s-%t", fixture.name, wantUpdate), func(t *testing.T) {
+				t.Parallel()
+				client := testutil.NewFakeDynamicClient(fixture.args.vsvc, fixture.args.vrouter)
+				cfg := ReconcilerConfig{
+					Rollout:  fixture.args.rollout,
+					Client:   client,
+					Recorder: record.NewFakeEventRecorder(),
+				}
+				r := NewReconciler(cfg)
+				desiredWeight := 0
+				if wantUpdate {
+					desiredWeight = 55
+				}
+				err := r.SetWeight(int32(desiredWeight))
+				assert.Nil(t, err)
+				actions := client.Actions()
+				if wantUpdate {
+					assert.Len(t, actions, 3)
+					assert.True(t, actions[0].Matches("get", "virtualservices"))
+					assert.True(t, actions[1].Matches("get", "virtualrouters"))
+					assert.True(t, actions[2].Matches("update", "virtualrouters"))
+					assertSetWeightAction(t, actions[2], int64(desiredWeight), fixture.args.routeType)
+				} else {
+					assert.Len(t, actions, 2)
+					assert.True(t, actions[0].Matches("get", "virtualservices"))
+					assert.True(t, actions[1].Matches("get", "virtualrouters"))
+				}
+			})
+		}
+	}
+}
+
+func TestSetWeightForRolloutWithRouteFilter(t *testing.T) {
+	type args struct {
+		vsvc         *unstructured.Unstructured
+		vrouter      *unstructured.Unstructured
+		routeType    string
+		rollout      *v1alpha1.Rollout
+		routeFilters []string
+		wantUpdate   bool
+	}
+
+	fixtures := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "with matched route-filter",
+			args: args{
+				vsvc:         unstructuredutil.StrToUnstructuredUnsafe(vsvcWithVrouter),
+				vrouter:      unstructuredutil.StrToUnstructuredUnsafe(vrouterWithHTTPRoutes),
+				routeType:    "httpRoute",
+				rollout:      fakeRollout(),
+				routeFilters: []string{"primary"},
+				wantUpdate:   true,
+			},
+		},
+		{
+			name: "with mismatched route-filter",
+			args: args{
+				vsvc:         unstructuredutil.StrToUnstructuredUnsafe(vsvcWithVrouter),
+				vrouter:      unstructuredutil.StrToUnstructuredUnsafe(vrouterWithHTTPRoutes),
+				routeType:    "httpRoute",
+				rollout:      fakeRollout(),
+				routeFilters: []string{"unknown"},
+				wantUpdate:   false,
+			},
+		},
+		{
+			name: "with multiple route-filter",
+			args: args{
+				vsvc:         unstructuredutil.StrToUnstructuredUnsafe(vsvcWithVrouter),
+				vrouter:      unstructuredutil.StrToUnstructuredUnsafe(vrouterWithHTTPRoutes),
+				routeType:    "httpRoute",
+				rollout:      fakeRollout(),
+				routeFilters: []string{"unknown", "primary"},
+				wantUpdate:   true,
+			},
+		},
+	}
+
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
 			client := testutil.NewFakeDynamicClient(fixture.args.vsvc, fixture.args.vrouter)
+			ro := fixture.args.rollout
+			ro.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualService.Routes = fixture.args.routeFilters
 			cfg := ReconcilerConfig{
 				Rollout:  fixture.args.rollout,
 				Client:   client,
 				Recorder: record.NewFakeEventRecorder(),
 			}
 			r := NewReconciler(cfg)
-			desiredWeight := 0
-			if wantUpdate {
-				desiredWeight = 55
-			}
+			desiredWeight := 55
 			err := r.SetWeight(int32(desiredWeight))
 			assert.Nil(t, err)
 			actions := client.Actions()
-			if wantUpdate {
+			if fixture.args.wantUpdate {
 				assert.Len(t, actions, 3)
 				assert.True(t, actions[0].Matches("get", "virtualservices"))
 				assert.True(t, actions[1].Matches("get", "virtualrouters"))
@@ -173,7 +256,7 @@ func TestSetWeightForVsvcWithVrouter(t *testing.T) {
 				assert.True(t, actions[0].Matches("get", "virtualservices"))
 				assert.True(t, actions[1].Matches("get", "virtualrouters"))
 			}
-		}
+		})
 	}
 }
 
@@ -241,26 +324,29 @@ func TestUpdateHash(t *testing.T) {
 	}
 
 	for _, fixture := range fixtures {
-		canaryVnode := createVnodeWithHash(baselineCanaryVnode, fixture.args.existingCanaryHash)
-		stableVnode := createVnodeWithHash(baselineStableVnode, fixture.args.existingStableHash)
-		client := testutil.NewFakeDynamicClient(canaryVnode, stableVnode)
-		cfg := ReconcilerConfig{
-			Rollout:  fixture.args.rollout,
-			Client:   client,
-			Recorder: record.NewFakeEventRecorder(),
-		}
-		r := NewReconciler(cfg)
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			canaryVnode := createVnodeWithHash(baselineCanaryVnode, fixture.args.existingCanaryHash)
+			stableVnode := createVnodeWithHash(baselineStableVnode, fixture.args.existingStableHash)
+			client := testutil.NewFakeDynamicClient(canaryVnode, stableVnode)
+			cfg := ReconcilerConfig{
+				Rollout:  fixture.args.rollout,
+				Client:   client,
+				Recorder: record.NewFakeEventRecorder(),
+			}
+			r := NewReconciler(cfg)
 
-		err := r.UpdateHash(fixture.args.inputCanaryHash, fixture.args.inputStableHash)
-		assert.Nil(t, err)
-		actions := client.Actions()
-		assert.Len(t, actions, 4)
-		assert.True(t, actions[0].Matches("get", "virtualnodes"))
-		assert.True(t, actions[1].Matches("update", "virtualnodes"))
-		assertUpdateHashAction(t, actions[1], fixture.args.expectedStableHash)
-		assert.True(t, actions[2].Matches("get", "virtualnodes"))
-		assert.True(t, actions[3].Matches("update", "virtualnodes"))
-		assertUpdateHashAction(t, actions[3], fixture.args.expectedCanaryHash)
+			err := r.UpdateHash(fixture.args.inputCanaryHash, fixture.args.inputStableHash)
+			assert.Nil(t, err)
+			actions := client.Actions()
+			assert.Len(t, actions, 4)
+			assert.True(t, actions[0].Matches("get", "virtualnodes"))
+			assert.True(t, actions[1].Matches("update", "virtualnodes"))
+			assertUpdateHashAction(t, actions[1], fixture.args.expectedStableHash)
+			assert.True(t, actions[2].Matches("get", "virtualnodes"))
+			assert.True(t, actions[3].Matches("update", "virtualnodes"))
+			assertUpdateHashAction(t, actions[3], fixture.args.expectedCanaryHash)
+		})
 	}
 }
 
@@ -291,8 +377,8 @@ func TestUpdateHashWithVirtualNodeMissingMatchLabels(t *testing.T) {
 	assertUpdateHashAction(t, actions[3], canaryHash)
 }
 
-func createVnodeWithHash(baselineVnode string, hash string) *unstructured.Unstructured {
-	vnode := unstructuredutil.StrToUnstructuredUnsafe(baselineVnode)
+func createVnodeWithHash(vnodeStr string, hash string) *unstructured.Unstructured {
+	vnode := unstructuredutil.StrToUnstructuredUnsafe(vnodeStr)
 	ml, _ := getPodSelectorMatchLabels(vnode)
 	ml[v1alpha1.DefaultRolloutUniqueLabelKey] = hash
 	setPodSelectorMatchLabels(vnode, ml)
@@ -361,7 +447,7 @@ spec:
       virtualRouterRef:
         name: mysvc-vrouter`
 
-const baselineVrouterWithHTTPRoutes = `
+const vrouterWithHTTPRoutes = `
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualRouter
 metadata:
@@ -386,7 +472,7 @@ spec:
                 name: mysvc-stable-vn
               weight: 100`
 
-const baselineVrouterWithGRPCRoutes = `
+const vrouterWithGRPCRoutes = `
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualRouter
 metadata:
@@ -412,7 +498,7 @@ spec:
                 name: mysvc-stable-vn
               weight: 100`
 
-const baselineVrouterWithHTTP2Routes = `
+const vrouterWithHTTP2Routes = `
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualRouter
 metadata:
@@ -437,7 +523,7 @@ spec:
                 name: mysvc-stable-vn
               weight: 100`
 
-const baselineVrouterWithTCPRoutes = `
+const vrouterWithTCPRoutes = `
 apiVersion: appmesh.k8s.aws/v1beta2
 kind: VirtualRouter
 metadata:
