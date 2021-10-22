@@ -21,6 +21,7 @@ const (
 	ErrVirtualServiceMissing               = "Virtual-service is missing"
 	ErrVirtualRouterMissing                = "Virtual-router is missing"
 	ErrVirtualNodeMissing                  = "Virtual-node is missing"
+	ErrNotWellFormed                       = "not well-formed"
 	defaultCanaryHash                      = "canary-hash"
 	defaultStableHash                      = "stable-hash"
 )
@@ -66,19 +67,18 @@ func NewReconciler(cfg ReconcilerConfig) *Reconciler {
 func (r *Reconciler) UpdateHash(canaryHash, stableHash string) error {
 	ctx := context.TODO()
 
-	r.log.Infof("UpdateHash: canaryHash (%s), stableHash (%s)", canaryHash, stableHash)
+	r.log.Debugf("UpdateHash: canaryHash (%s), stableHash (%s)", canaryHash, stableHash)
 
 	if stableHash == "" {
 		stableHash = defaultStableHash
 	}
 	rStableVnodeRef := r.rollout.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualNodeGroup.StableVirtualNodeRef
-	rStableVnodeRef.Namespace = defaultIfEmpty(rStableVnodeRef.Namespace, r.rollout.Namespace)
 	err := r.updateVirtualNodeWithHash(ctx, rStableVnodeRef, stableHash)
 	if err != nil {
 		return err
 	}
 
-	r.log.Infof("UpdateHash: updated stable virtual-node (%s) pod-selector to (%s)", rStableVnodeRef.Name, stableHash)
+	r.log.Debugf("UpdateHash: updated stable virtual-node (%s) pod-selector to (%s)", rStableVnodeRef.Name, stableHash)
 
 	//TODO: What is the impact if stableHash is not updated but canaryHash is updated?
 	// If both hashes are same then virtual-nodes will end up with exact same podSelector. This is not allowed by the
@@ -88,12 +88,11 @@ func (r *Reconciler) UpdateHash(canaryHash, stableHash string) error {
 		canaryHash = defaultCanaryHash
 	}
 	rCanaryVnodeRef := r.rollout.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualNodeGroup.CanaryVirtualNodeRef
-	rCanaryVnodeRef.Namespace = defaultIfEmpty(rCanaryVnodeRef.Namespace, r.rollout.Namespace)
 	err = r.updateVirtualNodeWithHash(ctx, rCanaryVnodeRef, canaryHash)
 	if err != nil {
 		return err
 	}
-	r.log.Infof("UpdateHash: updated canary virtual-node (%s) pod-selector to (%s)", rCanaryVnodeRef.Name, canaryHash)
+	r.log.Debugf("UpdateHash: updated canary virtual-node (%s) pod-selector to (%s)", rCanaryVnodeRef.Name, canaryHash)
 
 	return nil
 }
@@ -106,14 +105,13 @@ func (r *Reconciler) UpdateHash(canaryHash, stableHash string) error {
 func (r *Reconciler) SetWeight(desiredWeight int32, additionalDestinations ...v1alpha1.WeightDestination) error {
 	ctx := context.TODO()
 
-	r.log.Infof("SetWeight: setting desired-weight to %d", desiredWeight)
+	r.log.Debugf("SetWeight: setting desired-weight to %d", desiredWeight)
 
 	rVirtualService := r.rollout.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualService
-	rVirtualService.Namespace = defaultIfEmpty(rVirtualService.Namespace, r.rollout.Namespace)
-	uVsvc, err := r.client.GetVirtualServiceCR(ctx, rVirtualService.Namespace, rVirtualService.Name)
+	uVsvc, err := r.client.GetVirtualServiceCR(ctx, r.rollout.Namespace, rVirtualService.Name)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			r.recorder.Warnf(r.rollout, record.EventOptions{EventReason: "VirtualServiceNotFound"}, "VirtualService `%s` not found in namespace `%s`", rVirtualService.Name, rVirtualService.Namespace)
+			r.recorder.Warnf(r.rollout, record.EventOptions{EventReason: "VirtualServiceNotFound"}, "VirtualService `%s` not found in namespace `%s`", rVirtualService.Name, r.rollout.Namespace)
 			return errors.New(ErrVirtualServiceMissing)
 		}
 		return err
@@ -122,7 +120,7 @@ func (r *Reconciler) SetWeight(desiredWeight int32, additionalDestinations ...v1
 	uVr, err := r.client.GetVirtualRouterCRForVirtualService(ctx, uVsvc)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			r.recorder.Warnf(r.rollout, record.EventOptions{EventReason: "VirtualRouterNotFound"}, "VirtualRouter for `%s` not found in namespace `%s`", rVirtualService.Name, rVirtualService.Namespace)
+			r.recorder.Warnf(r.rollout, record.EventOptions{EventReason: "VirtualRouterNotFound"}, "VirtualRouter for `%s` not found in namespace `%s`", rVirtualService.Name, r.rollout.Namespace)
 			return errors.New(ErrVirtualRouterMissing)
 		}
 		return err
@@ -133,7 +131,7 @@ func (r *Reconciler) SetWeight(desiredWeight int32, additionalDestinations ...v1
 		return err
 	}
 
-	r.log.Infof("SetWeight: updated virtual router (%s) with desiredWeight (%d)", uVr.GetName(), desiredWeight)
+	r.log.Debugf("SetWeight: updated virtual router (%s) with desiredWeight (%d)", uVr.GetName(), desiredWeight)
 
 	return nil
 }
@@ -142,9 +140,7 @@ func (r *Reconciler) reconcileVirtualRouter(ctx context.Context, rRoutes []strin
 	uVrCopy := uVr.DeepCopy()
 
 	rCanaryVnodeRef := r.rollout.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualNodeGroup.CanaryVirtualNodeRef
-	rCanaryVnodeRef.Namespace = defaultIfEmpty(rCanaryVnodeRef.Namespace, uVrCopy.GetNamespace())
 	rStableVnodeRef := r.rollout.Spec.Strategy.Canary.TrafficRouting.AppMesh.VirtualNodeGroup.StableVirtualNodeRef
-	rStableVnodeRef.Namespace = defaultIfEmpty(rStableVnodeRef.Namespace, uVrCopy.GetNamespace())
 	requiresUpdate := false
 
 	routesFilterMap := make(map[string]bool)
@@ -163,12 +159,12 @@ func (r *Reconciler) reconcileVirtualRouter(ctx context.Context, rRoutes []strin
 		routeFldPath := routesFldPath.Index(idx)
 		route, ok := routeI.(map[string]interface{})
 		if !ok {
-			return field.Invalid(routeFldPath, uVrCopy.GetName(), "not well-formed")
+			return field.Invalid(routeFldPath, uVrCopy.GetName(), ErrNotWellFormed)
 		}
 
 		routeName, ok := route["name"].(string)
 		if !ok {
-			return field.Invalid(routeFldPath.Child("name"), uVrCopy.GetName(), "not well-formed")
+			return field.Invalid(routeFldPath.Child("name"), uVrCopy.GetName(), ErrNotWellFormed)
 		}
 
 		if len(routesFilterMap) > 0 {
@@ -180,44 +176,44 @@ func (r *Reconciler) reconcileVirtualRouter(ctx context.Context, rRoutes []strin
 
 		routeRule, routeType, err := GetRouteRule(route)
 		if err != nil && routeRule == nil {
-			return field.Invalid(routeFldPath, uVrCopy.GetName(), "not well-formed")
+			return field.Invalid(routeFldPath, uVrCopy.GetName(), ErrNotWellFormed)
 		}
 
 		weightedTargetsFldPath := routeFldPath.Child(routeType).Child("action").Child("weightedTargets")
 		weightedTargets, found, err := unstructured.NestedSlice(routeRule, "action", "weightedTargets")
 		if !found || err != nil {
-			return field.Invalid(weightedTargetsFldPath, uVrCopy.GetName(), "not well-formed")
+			return field.Invalid(weightedTargetsFldPath, uVrCopy.GetName(), ErrNotWellFormed)
 		}
 
 		for idx, wtI := range weightedTargets {
 			wtFldPath := weightedTargetsFldPath.Index(idx)
 			wt, ok := wtI.(map[string]interface{})
 			if !ok {
-				return field.Invalid(wtFldPath, uVrCopy.GetName(), "not well-formed")
+				return field.Invalid(wtFldPath, uVrCopy.GetName(), ErrNotWellFormed)
 			}
 			wtVnRefFldPath := wtFldPath.Child("virtualNodeRef")
 			wtVnRef, ok := wt["virtualNodeRef"].(map[string]interface{})
 			if !ok {
-				return field.Invalid(wtVnRefFldPath, uVrCopy.GetName(), "not well-formed")
+				return field.Invalid(wtVnRefFldPath, uVrCopy.GetName(), ErrNotWellFormed)
 			}
 			wtVnName, _ := wtVnRef["name"].(string)
-			wtVnNamespace := defaultIfEmpty(wtVnRef["namespace"], uVrCopy.GetNamespace())
+			wtVnNamespace := defaultIfEmpty(wtVnRef["namespace"], r.rollout.Namespace)
 			weight, err := toInt64(wt["weight"])
 			if err != nil {
-				return field.Invalid(wtFldPath.Child("weight"), uVrCopy.GetName(), "not well-formed")
+				return field.Invalid(wtFldPath.Child("weight"), uVrCopy.GetName(), ErrNotWellFormed)
 			}
-			if wtVnName == rStableVnodeRef.Name && wtVnNamespace == rStableVnodeRef.Namespace {
+			if wtVnName == rStableVnodeRef.Name && wtVnNamespace == r.rollout.Namespace {
 				if weight != int64(100-desiredWeight) {
 					requiresUpdate = true
 					wt["weight"] = int64(100 - desiredWeight)
 				}
-			} else if wtVnName == rCanaryVnodeRef.Name && wtVnNamespace == rCanaryVnodeRef.Namespace {
+			} else if wtVnName == rCanaryVnodeRef.Name && wtVnNamespace == r.rollout.Namespace {
 				if weight != int64(desiredWeight) {
 					requiresUpdate = true
 					wt["weight"] = int64(desiredWeight)
 				}
 			}
-			r.log.Infof("SetWeight: updating weight of virtualNode (%s.%s) with existing weight of (%d) to (%d)", wtVnName, wtVnNamespace, weight, wt["weight"])
+			r.log.Debugf("SetWeight: updating weight of virtualNode (%s.%s) with existing weight of (%d) to (%d)", wtVnName, wtVnNamespace, weight, wt["weight"])
 		}
 		//update route with new weighted targets
 		err = unstructured.SetNestedSlice(route, weightedTargets, routeType, "action", "weightedTargets")
@@ -242,10 +238,10 @@ func (r *Reconciler) reconcileVirtualRouter(ctx context.Context, rRoutes []strin
 }
 
 func (r *Reconciler) updateVirtualNodeWithHash(ctx context.Context, vnodeRef *v1alpha1.AppMeshVirtualNodeReference, hash string) error {
-	uVnode, err := r.client.GetVirtualNodeCR(ctx, vnodeRef.Namespace, vnodeRef.Name)
+	uVnode, err := r.client.GetVirtualNodeCR(ctx, r.rollout.Namespace, vnodeRef.Name)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			r.recorder.Warnf(r.rollout, record.EventOptions{EventReason: "VirtualNodeNotFound"}, "VirtualNode `%s` not found in namespace `%s`", vnodeRef.Name, vnodeRef.Namespace)
+			r.recorder.Warnf(r.rollout, record.EventOptions{EventReason: "VirtualNodeNotFound"}, "VirtualNode `%s` not found in namespace `%s`", vnodeRef.Name, r.rollout.Namespace)
 			return errors.New(ErrVirtualNodeMissing)
 		}
 		return err

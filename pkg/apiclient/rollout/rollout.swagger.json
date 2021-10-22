@@ -614,10 +614,6 @@
         "name": {
           "type": "string",
           "title": "Name is the name of VirtualNode CR"
-        },
-        "namespace": {
-          "type": "string",
-          "title": "Namespace is the namespace of VirtualNode CR. If unspecified, defaults to the referencing object’s namespace\n+optional"
         }
       },
       "title": "AppMeshVirtualNodeReference holds a reference to VirtualNode.appmesh.k8s.aws"
@@ -628,10 +624,6 @@
         "name": {
           "type": "string",
           "title": "Name is the name of virtual service"
-        },
-        "namespace": {
-          "type": "string",
-          "title": "Namespace is the namespace in which virtual service is present\n+optional"
         },
         "routes": {
           "type": "array",
@@ -1435,7 +1427,7 @@
           "$ref": "#/definitions/github.com.argoproj.argo_rollouts.pkg.apis.rollouts.v1alpha1.AmbassadorTrafficRouting",
           "title": "Ambassador holds specific configuration to use Ambassador to route traffic"
         },
-        "appmesh": {
+        "appMesh": {
           "$ref": "#/definitions/github.com.argoproj.argo_rollouts.pkg.apis.rollouts.v1alpha1.AppMeshTrafficRouting",
           "title": "AppMesh holds specific configuration to use AppMesh to route traffic"
         }

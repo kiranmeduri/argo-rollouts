@@ -576,11 +576,7 @@ func (c *rolloutContext) getReferencedAppMeshResources() ([]unstructured.Unstruc
 				return nil, field.Invalid(fldPath, nil, "must provide virtual-service")
 			}
 
-			namespace := tr.VirtualService.Namespace
-			if namespace == "" {
-				namespace = c.rollout.Namespace
-			}
-			vsvc, err := appmeshClient.GetVirtualServiceCR(ctx, namespace, tr.VirtualService.Name)
+			vsvc, err := appmeshClient.GetVirtualServiceCR(ctx, c.rollout.Namespace, tr.VirtualService.Name)
 			if err != nil {
 				if k8serrors.IsNotFound(err) {
 					return nil, field.Invalid(fldPath, tr.VirtualService.Name, err.Error())
