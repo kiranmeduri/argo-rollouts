@@ -74,11 +74,11 @@ func (c *Controller) NewTrafficRoutingReconciler(roCtx *rolloutContext) ([]traff
 		trafficReconcilers = append(trafficReconcilers, ambassador.NewReconciler(rollout, ac, c.recorder))
 	}
 	if rollout.Spec.Strategy.Canary.TrafficRouting.AppMesh != nil {
-		return appmesh.NewReconciler(appmesh.ReconcilerConfig{
+		trafficReconcilers = append(trafficReconcilers, appmesh.NewReconciler(appmesh.ReconcilerConfig{
 			Rollout:  rollout,
 			Client:   c.dynamicclientset,
 			Recorder: c.recorder,
-		}), nil
+		}))
 	}
 
 	// ensure that the trafficReconcilers is a healthy list and its not empty
